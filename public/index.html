@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Video Sharing App</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>🎥 Video Sharing App</h2>
+      <div class="settings">
+        <!-- <select id="apiSelect"></select> -->
+      </div>
+    </div>
+
+    <div class="upload-section">
+      <label class="file-upload">
+        <input type="file" id="videoInput" accept="video/*" hidden />
+        <button id="chooseBtn"><i class="icon">📁</i> Choose File</button>
+      </label>
+      <input type="password" id="passwordInput" placeholder="Upload Password" />
+      <button id="uploadBtn"><i class="icon">⬆️</i> Upload Video</button>
+      <p id="errorMsg" class="error"></p>
+    </div>
+
+    <div id="uploadedVideoContainer" class="uploaded-video"></div>
+
+    <h3>📃 All Videos</h3>
+    <div id="videoList" class="video-grid"></div>
+  </div>
+</body>
+</html>
