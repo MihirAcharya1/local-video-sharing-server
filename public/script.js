@@ -1,10 +1,14 @@
 const API_OPTIONS = [
   { name: 'Jio AirFiber', value: 'https://192.168.31.89:5000' },
-  { name: 'IQOO 11 - hotspot', value: 'https://10.74.173.210:5000' }
+  { name: 'IQOO 11 - hotspot', value: 'https://10.74.173.210:5000' },
+  { name: 'Realme 1', value: 'https://192.168.31.113:5000' },
+
 ];
 const UPLOAD_PASSWORD = '1234';
 const origin  = String(window.location.href).slice(0, window.location.pathname.length - 1);
-let apiUrl = origin || API_OPTIONS[0].value;
+console.log('Origin:', origin);
+console.log(window)
+let apiUrl = origin || API_OPTIONS[2].value;
 let videoFile = null;
 let videoList = [];
 
