@@ -8,12 +8,10 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const app = express();
-const PORT = 5001;
-const HTTPSPORT = 5000;
+const HTTP_PORT = 5000;
+const HTTPS_PORT = 5001;
 
-
-
-// Utility: Get local IP for LAN
+// Utility: Get local IP
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
     for (const name in interfaces) {
@@ -28,33 +26,30 @@ function getLocalIp() {
 
 const HOST = getLocalIp() || 'localhost';
 
-const VIDEO_DIR = '/data/data/com.termux/files/home/storage/downloads/MyVideos';
-const THUMB_DIR = `${VIDEO_DIR}/thumbs`;
+// Folder paths on Android Termux
+const UPLOAD_DIR = '/data/data/com.termux/files/home/storage/downloads/MyVideos';
+const THUMB_DIR = path.join(UPLOAD_DIR, 'thumbs');
 
-// Create dirs if not exist
-if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
+// Create folders if not exist
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
 
+// Try load HTTPS certs if available
+let credentials = {};
+try {
+    const privateKey = fs.readFileSync(path.join(__dirname, 'cert/server.key'), 'utf8');
+    const certificate = fs.readFileSync(path.join(__dirname, 'cert/server.cert'), 'utf8');
+    credentials = { key: privateKey, cert: certificate };
+} catch (e) {
+    console.warn("⚠️ HTTPS certs not found, running HTTP only.");
+}
 
-// Load SSL certificate and key
-const privateKey = fs.readFileSync(path.join(__dirname, 'cert/server.key'), 'utf8');
-const certificate = fs.readFileSync(path.join(__dirname, 'cert/server.cert'), 'utf8');
-
-const credentials = { key: privateKey, cert: certificate };
-
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR);
-
-// app.use(cors());
-
-app.use(cors({
-    origin: '*', // or '*', but less secure
-    credentials: true
-}));
-
+// Middlewares
+app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json());
 app.use('/videos', express.static(UPLOAD_DIR));
 app.use('/thumbnails', express.static(THUMB_DIR));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Multer setup
 const storage = multer.diskStorage({
@@ -63,162 +58,136 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-
+// Serve frontend
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Upload video + thumbnail generation
+// Upload endpoint with thumbnail
 app.post('/upload', upload.single('video'), (req, res) => {
-    try {
-        const videoPath = path.join(UPLOAD_DIR, req.file.filename);
-        const thumbPath = path.join(THUMB_DIR, `${req.file.filename}.jpg`);
+    const videoPath = path.join(UPLOAD_DIR, req.file.filename);
+    const thumbName = req.file.filename + '.jpg';
+    const thumbPath = path.join(THUMB_DIR, thumbName);
 
-        exec(`ffmpeg -i "${videoPath}" -ss 00:00:01.000 -vframes 1 "${thumbPath}"`, (err) => {
-            if (err) {
-                console.error('Thumbnail generation error:', err);
-                return res.status(500).json({ error: 'Upload succeeded but thumbnail generation failed.' });
-            }
+    exec(`ffmpeg -i "${videoPath}" -ss 00:00:01.000 -vframes 1 "${thumbPath}"`, (err) => {
+        if (err) {
+            console.error('FFmpeg Error:', err);
+            return res.status(500).json({ error: 'Thumbnail generation failed.' });
+        }
 
-            const metadata = {
-                filename: req.file.filename,
-                originalname: req.file.originalname,
-                size: req.file.size,
-                uploadDate: new Date().toISOString(),
-                videoUrl: `/videos/${req.file.filename}`,
-                thumbnailUrl: `/thumbnails/${req.file.filename}.jpg`
-            };
-            res.json(metadata);
+        res.json({
+            filename: req.file.filename,
+            originalname: req.file.originalname,
+            size: req.file.size,
+            uploadDate: new Date().toISOString(),
+            videoUrl: `/videos/${req.file.filename}`,
+            thumbnailUrl: `/thumbnails/${thumbName}`
         });
-
-    } catch (error) {
-        console.error('Upload error:', error);
-        return res.status(500).json({ error: 'Upload failed' });
-
-    }
-
-});
-
-// Get list of videos
-app.get('/videos', (req, res) => {
-    fs.readdir(UPLOAD_DIR, (err, files) => {
-        if (err) return res.status(500).json({ error: 'Failed to read videos' });
-
-        const videoList = files
-            .filter(file => /\.(mp4|webm|mov|mkv)$/.test(file))
-            .map(file => {
-                const stats = fs.statSync(path.join(UPLOAD_DIR, file));
-                return {
-                    name: file,
-                    url: `/videos/${file}`,
-                    thumbnail: `/thumbnails/${file}.jpg`,
-                    uploadDate: stats.mtime.toISOString(),
-                    size: stats.size
-                };
-            });
-
-        res.json(videoList);
     });
 });
 
-// Delete video + thumbnail
+// List all videos
+app.get('/videos', (req, res) => {
+    fs.readdir(UPLOAD_DIR, (err, files) => {
+        if (err) return res.status(500).json({ error: 'Read error' });
+
+        const videos = files.filter(f => /\.(mp4|mov|webm|mkv)$/.test(f)).map(f => {
+            const stat = fs.statSync(path.join(UPLOAD_DIR, f));
+            return {
+                name: f,
+                size: stat.size,
+                uploadDate: stat.mtime.toISOString(),
+                url: `/videos/${f}`,
+                thumbnail: `/thumbnails/${f}.jpg`
+            };
+        });
+
+        res.json(videos);
+    });
+});
+
+// Stream video
+app.get('/videos/:filename', (req, res) => {
+    const filePath = path.join(UPLOAD_DIR, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).send('Video not found');
+
+    const stat = fs.statSync(filePath);
+    const range = req.headers.range;
+
+    if (range) {
+        const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(startStr);
+        const end = endStr ? parseInt(endStr) : stat.size - 1;
+        const chunkSize = end - start + 1;
+
+        const stream = fs.createReadStream(filePath, { start, end });
+        res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': 'video/mp4'
+        });
+        stream.pipe(res);
+    } else {
+        res.writeHead(200, {
+            'Content-Length': stat.size,
+            'Content-Type': 'video/mp4'
+        });
+        fs.createReadStream(filePath).pipe(res);
+    }
+});
+
+// Delete video
 app.delete('/videos/:filename', (req, res) => {
     const videoPath = path.join(UPLOAD_DIR, req.params.filename);
     const thumbPath = path.join(THUMB_DIR, `${req.params.filename}.jpg`);
 
     fs.unlink(videoPath, (err) => {
         if (err) return res.status(404).json({ error: 'Video not found' });
-
-        fs.unlink(thumbPath, () => {
-            // Even if thumbnail doesn't exist, no need to block
-            res.json({ success: true });
-        });
+        fs.unlink(thumbPath, () => res.json({ success: true }));
     });
 });
 
-// Rename video + thumbnail
+// Rename video
 app.post('/rename', (req, res) => {
     const { oldName, newName } = req.body;
-
-    if (!oldName || !newName) {
-        return res.status(400).json({ error: 'Both oldName and newName are required.' });
-    }
+    if (!oldName || !newName) return res.status(400).json({ error: 'Missing names' });
 
     const oldVideoPath = path.join(UPLOAD_DIR, oldName);
     const newVideoPath = path.join(UPLOAD_DIR, newName);
     const oldThumbPath = path.join(THUMB_DIR, `${oldName}.jpg`);
     const newThumbPath = path.join(THUMB_DIR, `${newName}.jpg`);
 
-    if (!fs.existsSync(oldVideoPath)) {
-        return res.status(404).json({ error: 'Video not found.' });
-    }
+    if (!fs.existsSync(oldVideoPath)) return res.status(404).json({ error: 'Old video not found' });
 
     fs.rename(oldVideoPath, newVideoPath, (err) => {
-        if (err) return res.status(500).json({ error: 'Rename failed for video.' });
-
-        fs.rename(oldThumbPath, newThumbPath, (thumbErr) => {
-            // Don't fail rename if thumbnail is missing
-            if (thumbErr) console.warn('Thumbnail rename failed (may not exist):', thumbErr);
-            res.json({ success: true });
-        });
+        if (err) return res.status(500).json({ error: 'Rename failed' });
+        fs.rename(oldThumbPath, newThumbPath, () => res.json({ success: true }));
     });
 });
 
-// Generate thumbnail (manual)
+// Manual thumbnail regeneration
 app.post('/generate-thumbnail', (req, res) => {
     const { filename } = req.body;
     const videoPath = path.join(UPLOAD_DIR, filename);
     const thumbPath = path.join(THUMB_DIR, `${filename}.jpg`);
 
+    if (!fs.existsSync(videoPath)) return res.status(404).json({ error: 'Video not found' });
+
     exec(`ffmpeg -i "${videoPath}" -ss 00:00:01.000 -vframes 1 "${thumbPath}"`, (err) => {
-        if (err) return res.status(500).json({ error: 'Thumbnail generation failed' });
+        if (err) return res.status(500).json({ error: 'Failed to generate thumbnail' });
         res.json({ thumbnail: `/thumbnails/${filename}.jpg` });
     });
 });
 
-// Stream video with Range support
-app.get('/videos/:filename', (req, res) => {
-    const filePath = path.join(UPLOAD_DIR, req.params.filename);
-
-    if (!fs.existsSync(filePath)) return res.status(404).send('Video not found');
-
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-
-    if (range) {
-        const [start, end] = range.replace(/bytes=/, "").split("-");
-        const chunkStart = parseInt(start, 10);
-        const chunkEnd = end ? parseInt(end, 10) : fileSize - 1;
-
-        const stream = fs.createReadStream(filePath, { start: chunkStart, end: chunkEnd });
-        res.writeHead(206, {
-            'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${fileSize}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': chunkEnd - chunkStart + 1,
-            'Content-Type': 'video/mp4',
-        });
-        stream.pipe(res);
-    } else {
-        res.writeHead(200, {
-            'Content-Length': fileSize,
-            'Content-Type': 'video/mp4',
-        });
-        fs.createReadStream(filePath).pipe(res);
-    }
+// Start HTTP server
+app.listen(HTTP_PORT, HOST, () => {
+    console.log(`🌐 HTTP server running: http://${HOST}:${HTTP_PORT}`);
 });
 
-
-
-
-const httpsServer = https.createServer(credentials, app);
-
-httpsServer.listen(HTTPSPORT, HOST, () => {
-    console.log(`✅ HTTPS Server running at https://${HOST}:${HTTPSPORT}`);
-});
-
-app.listen(PORT, HOST, () => {
-    console.log(`✅ Server running at http://${HOST}:${PORT}`);
-});
+// Start HTTPS if certs are valid
+if (credentials.key && credentials.cert) {
+    https.createServer(credentials, app).listen(HTTPS_PORT, HOST, () => {
+        console.log(`🔒 HTTPS server running: https://${HOST}:${HTTPS_PORT}`);
+    });
+}
