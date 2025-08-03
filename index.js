@@ -26,10 +26,15 @@ function getLocalIp() {
     return 'localhost';
 }
 
-const HOST = getLocalIp()|| 'localhost';
+const HOST = getLocalIp() || 'localhost';
 
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const THUMB_DIR = path.join(__dirname, 'thumbnails');
+const VIDEO_DIR = '/data/data/com.termux/files/home/storage/downloads/MyVideos';
+const THUMB_DIR = `${VIDEO_DIR}/thumbs`;
+
+// Create dirs if not exist
+if (!fs.existsSync(VIDEO_DIR)) fs.mkdirSync(VIDEO_DIR, { recursive: true });
+if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
+
 
 // Load SSL certificate and key
 const privateKey = fs.readFileSync(path.join(__dirname, 'cert/server.key'), 'utf8');
@@ -60,32 +65,40 @@ const upload = multer({ storage });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Upload video + thumbnail generation
 app.post('/upload', upload.single('video'), (req, res) => {
+    try {
+        const videoPath = path.join(UPLOAD_DIR, req.file.filename);
+        const thumbPath = path.join(THUMB_DIR, `${req.file.filename}.jpg`);
 
-    const videoPath = path.join(UPLOAD_DIR, req.file.filename);
-    const thumbPath = path.join(THUMB_DIR, `${req.file.filename}.jpg`);
+        exec(`ffmpeg -i "${videoPath}" -ss 00:00:01.000 -vframes 1 "${thumbPath}"`, (err) => {
+            if (err) {
+                console.error('Thumbnail generation error:', err);
+                return res.status(500).json({ error: 'Upload succeeded but thumbnail generation failed.' });
+            }
 
-    exec(`ffmpeg -i "${videoPath}" -ss 00:00:01.000 -vframes 1 "${thumbPath}"`, (err) => {
-        if (err) {
-            console.error('Thumbnail generation error:', err);
-            return res.status(500).json({ error: 'Upload succeeded but thumbnail generation failed.' });
-        }
+            const metadata = {
+                filename: req.file.filename,
+                originalname: req.file.originalname,
+                size: req.file.size,
+                uploadDate: new Date().toISOString(),
+                videoUrl: `/videos/${req.file.filename}`,
+                thumbnailUrl: `/thumbnails/${req.file.filename}.jpg`
+            };
+            res.json(metadata);
+        });
 
-        const metadata = {
-            filename: req.file.filename,
-            originalname: req.file.originalname,
-            size: req.file.size,
-            uploadDate: new Date().toISOString(),
-            videoUrl: `/videos/${req.file.filename}`,
-            thumbnailUrl: `/thumbnails/${req.file.filename}.jpg`
-        };
-        res.json(metadata);
-    });
+    } catch (error) {
+        console.error('Upload error:', error);
+        return res.status(500).json({ error: 'Upload failed' });
+
+    }
+
 });
 
 // Get list of videos
