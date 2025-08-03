@@ -1,7 +1,7 @@
 const API_OPTIONS = [
   { name: 'Jio AirFiber', value: 'https://192.168.31.89:5000' },
   { name: 'IQOO 11 - hotspot', value: 'https://10.74.173.210:5000' },
-  { name: 'Realme 1', value: 'https://192.168.31.113:5000' },
+  { name: 'Realme 1', value: 'https://192.168.31.113:5001' },
 
 ];
 const UPLOAD_PASSWORD = '1234';
