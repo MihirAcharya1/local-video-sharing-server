@@ -24,7 +24,7 @@ function getLocalIp() {
     return 'localhost';
 }
 
-const HOST = getLocalIp() || 'localhost';
+const HOST = 'localhost' || getLocalIp();
 
 // Folder paths on Android Termux
 const UPLOAD_DIR = '/data/data/com.termux/files/home/storage/downloads/MyVideos';
