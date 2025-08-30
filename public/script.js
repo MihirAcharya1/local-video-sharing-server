@@ -5,10 +5,10 @@ const API_OPTIONS = [
 
 ];
 const UPLOAD_PASSWORD = '1234';
-const origin  = String(window.location.href).slice(0, window.location.pathname.length - 1);
+const origin  = String(window.location.href).slice(0, window.location.href.length - 1);
 console.log('Origin:', origin);
 console.log(window)
-let apiUrl = window.location.href;
+let apiUrl = origin || API_OPTIONS[2].value;
 let videoFile = null;
 let videoList = [];
 
@@ -57,7 +57,7 @@ uploadBtn.addEventListener('click', async () => {
     uploadBtn.disabled = true;
     errorMsg.textContent = '';
 
-    const res = await axios.post(`${apiUrl}upload`, formData, {
+    const res = await axios.post(`${apiUrl}/upload`, formData, {
       onUploadProgress: (e) => {
         const percent = Math.round((e.loaded * 100) / e.total);
         uploadBtn.innerHTML = `Uploading... (${percent}%)`;
@@ -88,7 +88,7 @@ uploadBtn.addEventListener('click', async () => {
 async function fetchVideos() {
   videoListContainer.innerHTML = 'Loading videos...';
   try {
-    const res = await axios.get(`${apiUrl}videos`);
+    const res = await axios.get(`${apiUrl}/videos`);
     videoList = res.data;
     renderVideoList();
   } catch {
@@ -124,7 +124,7 @@ function renderVideoList() {
 window.deleteVideo = async (name) => {
   if (!confirm(`Delete video: ${name}?`)) return;
   try {
-    await axios.delete(`${apiUrl}videos/${name}`);
+    await axios.delete(`${apiUrl}/videos/${name}`);
     fetchVideos();
   } catch {
     errorMsg.textContent = '❌ Failed to delete';
@@ -139,7 +139,7 @@ window.renameVideo = async (oldName) => {
   const newName = input + ext;
 
   try {
-    await axios.post(`${apiUrl}rename`, { oldName, newName });
+    await axios.post(`${apiUrl}/rename`, { oldName, newName });
     fetchVideos();
   } catch {
     errorMsg.textContent = '❌ Rename failed';
