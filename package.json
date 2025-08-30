@@ -10,7 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon index.js",
     "dev": "nodemon index.js",
-    "serve":"nodemon index.js & cloudflared tunnel --url http://locahost:5000"
+    "serve":"nodemon index.js & cloudflared tunnel --url http://localhost:5000"
   },
   "dependencies": {
     "cors": "^2.8.5",
